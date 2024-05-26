@@ -204,9 +204,10 @@ class checkDBus4VDR:
                 logging.info("VDR started")
             elif kwargs["member"] == "Ready":
                 self.config.vdr_running = True
-                update_recdir()
+                update_recdir(self.config.vdr_instance_id)
 
     def check_dbus2vdr(self):
+        instance_id = self.config.vdr_instance_id 
         vdr_bus_name = f"de.tvdr.vdr{instance_id if instance_id else ''}"
         self.vdr = self.bus.get_object(vdr_bus_name, "/vdr")
         status = self.vdr.Status(dbus_interface="de.tvdr.vdr.vdr")
@@ -272,6 +273,7 @@ class Config(BaseClass):
                       Prefix for NFS mounts: {self.nfs_prefix}
                       Suffix for NFS mounts: {self.nfs_suffix}
                       use dbus2vdr: {self.dbus2vdr}
+                      vdr_instance_id: {self.vdr_instance_id}
                       SVDRP-Port: {self.svdrp_port}
                       IP whitelist: {self.ip_whitelist}
                       IP blacklist: {self.ip_blacklist}
@@ -351,12 +353,12 @@ class Config(BaseClass):
                     GLib.source_remove(self.updateJob)
                 except:
                     pass
-                self.updateJob = GLib.timeout_add(250, update_recdir)
+                self.updateJob = GLib.timeout_add(250, update_recdir, self.vdr_instance_id)
             except:
                 logging.warn("could not inhibit vdr rec updte")
-                self.updateJob = GLib.timeout_add(250, update_recdir)
+                self.updateJob = GLib.timeout_add(250, update_recdir, self.vdr_instance_id)
         else:
-            self.updateJob = GLib.timeout_add(250, update_recdir)
+            self.updateJob = GLib.timeout_add(250, update_recdir, self.vdr_instance_id)
 
 
 class LocalLinker(BaseClass):
@@ -423,7 +425,7 @@ class LocalLinker(BaseClass):
             self.unlink(self.get_target("vdr", subtype, host))
             self.unlink(self.get_vdr_target(subtype, host))
             if self.config.job is None:
-                self.config.job = GLib.timeout_add(500, update_recdir)
+                self.config.job = GLib.timeout_add(500, update_recdir, self.config.vdr_instance_id)
 
 
 class AvahiService:
@@ -700,14 +702,14 @@ class nfsService(BaseClass):
             self.update_recdir()
 
 
-def update_recdir():
+def update_recdir(instance_id=0):
     try:
         if config.dbus2vdr is True:
             bus = dbus.SystemBus()
             vdr_bus_name = f"de.tvdr.vdr{instance_id if instance_id else ''}"
             dbus2vdr = bus.get_object(vdr_bus_name, "/Recordings")
             #answer = dbus.Int32(0)
-            anwer, message = dbus2vdr.Update(dbus_interface="de.tvdr.vdr.recording")
+            answer, message = dbus2vdr.Update(dbus_interface="de.tvdr.vdr.recording")
             logging.info("Update recdir via dbus: %s %s", answer, message)
         else:
             with SVDRPConnection("127.0.0.1", config.svdrp_port) as svdrp_con:
@@ -750,7 +752,7 @@ def sigint(*args, **kwargs):
     avahiservice.unlink_all()
     logging.debug("shutting down, vdr is running: %s" % config.vdr_running)
     if config.vdr_running:
-        update_recdir()
+        update_recdir(config.vdr_instance_id)
     GLib.MainLoop().quit()
     sys.exit(0)
 
@@ -810,6 +812,6 @@ if __name__ == "__main__":
     try:
         mainloop.run()
     except KeyboardInterrupt:
-        sigint("KeyboardInterrup")
+        sigint("KeyboardInterrupt")
     except Exception as e:
         sigint(e)
